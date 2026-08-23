@@ -1,3 +1,5 @@
+from collections import deque
+import heapq
 import random
 import tkinter as tk
 
@@ -108,6 +110,134 @@ class ModelBasedAgent:
         self.last_action = action
         return action
 
+
+# STEP 1.4 — SEARCH AGENT (PROBLEM-SOLVING AGENT)
+
+
+class SearchAgent:
+    """
+    Problem-Solving Agent that formulates a plan using search algorithms
+    (BFS, DFS, or UCS) to find the shortest/optimal path to food pellets.
+    """
+
+    def __init__(self):
+        self.plan = []
+        self.active_algo = 'BFS'
+
+    def get_neighbors(self, pos, walls, grid_size):
+        x, y = pos
+        directions = [
+            ('Up', (0, 1)),
+            ('Right', (1, 0)),
+            ('Down', (0, -1)),
+            ('Left', (-1, 0))
+        ]
+        neighbors = []
+        for action, (dx, dy) in directions:
+            nx, ny = x + dx, y + dy
+            if 0 <= nx < grid_size[0] and 0 <= ny < grid_size[1]:
+                if (nx, ny) not in walls:
+                    neighbors.append(((nx, ny), action))
+        return neighbors
+
+    def bfs_search(self, start, goal, walls, grid_size):
+        start = tuple(start)
+        goal = tuple(goal)
+        walls = set(tuple(w) for w in walls)
+
+        queue = deque([(start, [])])
+        visited = {start}
+
+        while queue:
+            curr, path = queue.popleft()
+            if curr == goal:
+                return path
+
+            for next_node, action in self.get_neighbors(curr, walls, grid_size):
+                if next_node not in visited:
+                    visited.add(next_node)
+                    queue.append((next_node, path + [action]))
+
+        return None
+
+    def dfs_search(self, start, goal, walls, grid_size):
+        start = tuple(start)
+        goal = tuple(goal)
+        walls = set(tuple(w) for w in walls)
+
+        stack = [(start, [])]
+        visited = set()
+
+        while stack:
+            curr, path = stack.pop()
+            if curr == goal:
+                return path
+
+            if curr not in visited:
+                visited.add(curr)
+                for next_node, action in self.get_neighbors(curr, walls, grid_size):
+                    if next_node not in visited:
+                        stack.append((next_node, path + [action]))
+
+        return None
+
+    def ucs_search(self, start, goal, walls, grid_size):
+        start = tuple(start)
+        goal = tuple(goal)
+        walls = set(tuple(w) for w in walls)
+
+        counter = 0
+        pq = [(0, counter, start, [])]
+        visited = {}
+
+        while pq:
+            cost, _, curr, path = heapq.heappop(pq)
+            if curr == goal:
+                return path
+
+            if curr in visited and visited[curr] <= cost:
+                continue
+            visited[curr] = cost
+
+            for next_node, action in self.get_neighbors(curr, walls, grid_size):
+                new_cost = cost + 1
+                if next_node not in visited or new_cost < visited[next_node]:
+                    counter += 1
+                    heapq.heappush(pq, (new_cost, counter, next_node, path + [action]))
+
+        return None
+
+    def sense_and_act(self, percept):
+        if not self.plan:
+            all_food = percept.get('all_food', [])
+            if not all_food:
+                return "Forward"
+
+            start = tuple(percept.get('agent_pos', (0, 0)))
+            walls = set(percept.get('walls', []))
+            grid_size = percept.get('grid_size', (10, 10))
+
+            closest_food = min(
+                all_food,
+                key=lambda f: abs(f[0] - start[0]) + abs(f[1] - start[1])
+            )
+            goal = tuple(closest_food)
+
+            if self.active_algo == 'BFS':
+                actions = self.bfs_search(start, goal, walls, grid_size)
+            elif self.active_algo == 'DFS':
+                actions = self.dfs_search(start, goal, walls, grid_size)
+            elif self.active_algo == 'UCS':
+                actions = self.ucs_search(start, goal, walls, grid_size)
+            else:
+                actions = self.bfs_search(start, goal, walls, grid_size)
+
+            if actions is not None:
+                self.plan = list(actions) + ['Suck']
+            else:
+                self.plan = ['Forward']
+
+        return self.plan.pop(0)
 
 
 # GRID ENVIRONMENT
@@ -258,13 +388,43 @@ class VisualGridHuntGame:
 
         return {
             "wall_ahead": wall_ahead,
-            "food_here": food_here
+            "food_here": food_here,
+            "agent_pos": tuple(self.agent_pos),
+            "agent_direction": self.agent_direction,
+            "all_food": list(self.food_positions),
+            "walls": set(self.walls),
+            "grid_size": (self.width, self.height)
         }
 
     def execute_action(self, action):
         self.steps += 1
 
-        if action == "TurnLeft":
+        if action in ["Up", "Right", "Down", "Left"]:
+            dir_map = {
+                "Up": (0, 1, 0),
+                "Right": (1, 0, 1),
+                "Down": (0, -1, 2),
+                "Left": (-1, 0, 3)
+            }
+            dx, dy, new_dir = dir_map[action]
+            self.agent_direction = new_dir
+            next_x = self.agent_pos[0] + dx
+            next_y = self.agent_pos[1] + dy
+
+            inside_grid = (
+                0 <= next_x < self.width
+                and 0 <= next_y < self.height
+            )
+
+            if (
+                inside_grid
+                and (next_x, next_y) not in self.walls
+            ):
+                self.agent_pos = [next_x, next_y]
+            else:
+                self.score -= 5
+
+        elif action == "TurnLeft":
             self.agent_direction = (
                 self.agent_direction - 1
             ) % 4
@@ -425,8 +585,45 @@ class GridGameGUI:
         )
         self.model_button.pack(pady=3)
 
+        self.bfs_button = tk.Button(
+            root,
+            text="Run Search Agent (BFS)",
+            command=self.start_bfs_agent,
+            font=("Arial", 12),
+            bg="#1d4ed8",
+            fg="white"
+        )
+        self.bfs_button.pack(pady=3)
+
+        self.dfs_button = tk.Button(
+            root,
+            text="Run Search Agent (DFS)",
+            command=self.start_dfs_agent,
+            font=("Arial", 12),
+            bg="#b91c1c",
+            fg="white"
+        )
+        self.dfs_button.pack(pady=3)
+
+        self.ucs_button = tk.Button(
+            root,
+            text="Run Search Agent (UCS)",
+            command=self.start_ucs_agent,
+            font=("Arial", 12),
+            bg="#6d28d9",
+            fg="white"
+        )
+        self.ucs_button.pack(pady=3)
+
         self.reset_environment()
         self.draw_grid()
+
+    def set_buttons_state(self, state):
+        self.simple_button.config(state=state)
+        self.model_button.config(state=state)
+        self.bfs_button.config(state=state)
+        self.dfs_button.config(state=state)
+        self.ucs_button.config(state=state)
 
     def reset_environment(self):
         self.env = VisualGridHuntGame(
@@ -450,9 +647,29 @@ class GridGameGUI:
         self.agent_name = "Model-Based Agent"
         self.start_simulation()
 
+    def start_bfs_agent(self):
+        self.reset_environment()
+        self.agent = SearchAgent()
+        self.agent.active_algo = "BFS"
+        self.agent_name = "Search Agent (BFS)"
+        self.start_simulation()
+
+    def start_dfs_agent(self):
+        self.reset_environment()
+        self.agent = SearchAgent()
+        self.agent.active_algo = "DFS"
+        self.agent_name = "Search Agent (DFS)"
+        self.start_simulation()
+
+    def start_ucs_agent(self):
+        self.reset_environment()
+        self.agent = SearchAgent()
+        self.agent.active_algo = "UCS"
+        self.agent_name = "Search Agent (UCS)"
+        self.start_simulation()
+
     def start_simulation(self):
-        self.simple_button.config(state="disabled")
-        self.model_button.config(state="disabled")
+        self.set_buttons_state("disabled")
 
         self.draw_grid()
         self.run_loop()
