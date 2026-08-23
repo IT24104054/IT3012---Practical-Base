@@ -822,7 +822,8 @@ class GridGameGUI:
                         f"Score: {self.env.score} | "
                         f"Steps: {self.env.steps} | "
                         f"Action: {action} | "
-                        f"Percept: {percept}"
+                        f"Pos: {percept['agent_pos']} | "
+                        f"Food left: {len(percept['all_food'])}"
                     )
                 )
 
@@ -844,8 +845,7 @@ class GridGameGUI:
                     )
                 )
 
-                self.simple_button.config(state="normal")
-                self.model_button.config(state="normal")
+                self.set_buttons_state("normal")
 
         step()
 
