@@ -1,8 +1,9 @@
 # agent.py
-# IT3012 – Intelligent Agents  |  Week 03: Problem-Solving Agents
+# IT3012 – Intelligent Agents  |  Week 03 & 04: Problem-Solving Agents
 
 from collections import deque
 import heapq
+import math
 import random
 
 
@@ -223,6 +224,63 @@ class SearchAgent:
 
         return None   # goal unreachable
 
+    # ── Heuristic Functions ────────────────────────────────────────────────────
+
+    def manhattan_distance(self, pos, goal):
+        """Calculate Manhattan distance: h(n) = |x1 - x2| + |y1 - y2|"""
+        return abs(pos[0] - goal[0]) + abs(pos[1] - goal[1])
+
+    def euclidean_distance(self, pos, goal):
+        """Calculate Euclidean distance: h(n) = sqrt((x1-x2)^2 + (y1-y2)^2)"""
+        return math.sqrt((pos[0] - goal[0]) ** 2 + (pos[1] - goal[1]) ** 2)
+
+    # ── A* Search ──────────────────────────────────────────────────────────────
+
+    def astar_search(self, start_pos, goal_pos, walls, grid_size, heuristic_type='manhattan'):
+        """
+        A* Search – priority queue ordered by f(n) = g(n) + h(n).
+        Uses a heuristic to guide the search toward the goal more efficiently
+        than uninformed strategies.
+        """
+        start_pos = tuple(start_pos)
+        goal_pos  = tuple(goal_pos)
+        walls     = set(tuple(w) for w in walls)
+
+        # Select the heuristic function
+        if heuristic_type == 'euclidean':
+            heuristic = self.euclidean_distance
+        else:
+            heuristic = self.manhattan_distance
+
+        counter      = 0
+        h_start      = heuristic(start_pos, goal_pos)
+        # Priority queue: (f_cost, g_cost, tie_breaker, current_pos, path_taken)
+        frontier     = [(h_start, 0, counter, start_pos, [])]
+        reached_states = set()
+
+        while frontier:
+            f_cost, g_cost, _, current_pos, path_taken = heapq.heappop(frontier)
+
+            if current_pos == goal_pos:
+                return path_taken
+
+            if current_pos in reached_states:
+                continue
+            reached_states.add(current_pos)
+
+            for next_pos, action in self._get_neighbors(current_pos, walls, grid_size):
+                if next_pos not in reached_states:
+                    g_new = g_cost + 1
+                    h_new = heuristic(next_pos, goal_pos)
+                    f_new = g_new + h_new
+                    counter += 1
+                    heapq.heappush(
+                        frontier,
+                        (f_new, g_new, counter, next_pos, path_taken + [action])
+                    )
+
+        return None   # goal unreachable
+
     # ── sense_and_act ──────────────────────────────────────────────────────────
 
     def sense_and_act(self, percept: dict) -> str:
@@ -256,6 +314,8 @@ class SearchAgent:
                 actions = self.dfs_search(start, goal, walls, grid_size)
             elif self.active_algo == 'UCS':
                 actions = self.ucs_search(start, goal, walls, grid_size)
+            elif self.active_algo == 'AStar':
+                actions = self.astar_search(start, goal, walls, grid_size)
             else:
                 actions = self.bfs_search(start, goal, walls, grid_size)
 
